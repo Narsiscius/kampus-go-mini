@@ -9,14 +9,17 @@
 #hud{position:fixed;top:0;left:0;right:0;z-index:1500;padding:10px 12px;background:linear-gradient(#000b,#0000);font-size:14px;pointer-events:none}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);z-index:3500;background:#000d;padding:10px 16px;border-radius:20px;opacity:0;transition:.3s;text-align:center;max-width:90%;pointer-events:none}
 #bar{position:fixed;bottom:0;left:0;right:0;z-index:1500;display:flex;gap:8px;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
-button{flex:1;padding:14px;border:0;border-radius:12px;background:#37474f;color:#fff;font-size:15px;font-weight:600}
-.cr{width:44px;height:44px;border-radius:50%;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;box-shadow:0 2px 8px #0008}
+button{flex:1;padding:14px 6px;border:0;border-radius:12px;background:#37474f;color:#fff;font-size:14px;font-weight:600}
+.cr{width:46px;height:46px;border-radius:50%;border:3px solid #fff;position:relative;box-shadow:0 2px 8px #0008}
+.cr b{position:absolute;top:12px;width:8px;height:10px;background:#fff;border-radius:50%;box-shadow:inset 0 -4px 0 #1b1b2f}
+.cr b:nth-child(1){left:8px}.cr b:nth-child(2){right:8px}
+.cr i{position:absolute;left:12px;bottom:8px;width:12px;height:6px;border-bottom:3px solid #1b1b2f;border-radius:0 0 12px 12px}
 .rare{border-color:gold;animation:g 1.2s infinite alternate}@keyframes g{to{box-shadow:0 0 16px 6px gold}}
 #enc{position:fixed;inset:0;z-index:2000;display:none;background:linear-gradient(#5c9ce6,#8bc34a);touch-action:none}
 #cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 #gl{position:absolute;inset:0;width:100%;height:100%}
 #etxt{position:absolute;top:14px;left:0;right:0;text-align:center;font-weight:700;text-shadow:0 1px 4px #000;padding:0 14px}
-#flee{position:absolute;top:56px;left:12px;flex:none;padding:8px 14px;background:#b71c1c}
+#flee{position:absolute;top:60px;left:12px;flex:none;padding:8px 14px;background:#b71c1c}
 #inv,#start{position:fixed;inset:0;background:#12202bf2;padding:20px;display:none;overflow:auto;z-index:3000}
 #start{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:14px;z-index:4000}
 #start button{flex:none;width:80%;max-width:300px;background:#2e7d32}
@@ -24,63 +27,100 @@ button{flex:1;padding:14px;border:0;border-radius:12px;background:#37474f;color:
 </style></head><body>
 <div id="map"></div>
 <div id="hud"><div id="st">Menunggu GPS…</div><div>Skor: <b id="sc">0</b></div></div>
-<div id="bar"><button id="bInv">🎒 Inventori</button><button id="bSim">📍 Simulasi: OFF</button></div>
+<div id="bar"><button id="bInv">🎒 Inventori</button><button id="bCen">🎯 Pusat</button><button id="bSim">🚶 Simulasi: OFF</button></div>
 <div id="toast"></div>
 <div id="enc"><video id="cam" autoplay playsinline muted></video><canvas id="gl"></canvas><div id="etxt"></div><button id="flee">Kabur</button></div>
-<div id="inv"><h2>Inventori</h2><div id="invList"></div><br><button id="bClose">Tutup</button><button id="bReset" style="background:#b71c1c;margin-top:10px;width:100%">Reset Data</button></div>
-<div id="start"><h1>Campus Go Mini</h1><p>Jelajahi kampus, dekati makhluk di peta, ketuk, lalu lempar bola untuk menangkapnya.<br>Izinkan akses lokasi &amp; kamera.</p><button id="bStart">Mulai</button></div>
+<div id="inv"><h2>Inventori</h2><div id="invList"></div><br><button id="bClose" style="width:100%">Tutup</button><button id="bReset" style="background:#b71c1c;margin-top:10px;width:100%">Reset Data</button></div>
+<div id="start"><h1>Campus Go Mini</h1><p>Berjalanlah di kampus. Makhluk liar akan muncul di sekitarmu — dekati, ketuk, lalu lempar Orb Kristal untuk menangkapnya.<br>Izinkan akses lokasi &amp; kamera.</p><button id="bStart">Mulai</button></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-let D,S,me=null,sim=false,simPos=null,cur=null,state="off",stream,actx,mesh,map,pm,pc,y0=0;
+let D,S,me=null,sim=false,simPos=null,simT=null,cur=null,state="off",stream,actx,mesh,map,pm,pc,y0=0,follow=true,wild=[],wid=0,lastSp=null;
 const save=JSON.parse(localStorage.getItem("cgm")||'{"inv":[],"cd":{},"score":0}');
 const persist=()=>localStorage.setItem("cgm",JSON.stringify(save));
 const pos=()=>sim?simPos:me, typeOf=id=>D.types.find(t=>t.id===id);
 const onCd=sp=>(Date.now()-(save.cd[sp.id]||0))<S.cooldownSec*1000;
 function dist(a,b){const R=6371000,r=Math.PI/180,x=(b.lat-a.lat)*r,y=(b.lng-a.lng)*r;
  const h=Math.sin(x/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
-function toast(t){const e=$("toast");e.textContent=t;e.style.opacity=1;clearTimeout(e.t);e.t=setTimeout(()=>e.style.opacity=0,2200);}
+function toast(t){const e=$("toast");e.textContent=t;e.style.opacity=1;clearTimeout(e.t);e.t=setTimeout(()=>e.style.opacity=0,2400);}
 function beep(f,d,type="sine"){if(!actx)return;const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.value=f;
  g.gain.setValueAtTime(.2,actx.currentTime);g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+d);o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d);}
 const buzz=p=>navigator.vibrate&&navigator.vibrate(p);
 
-// ---------- three.js (layar pertemuan) ----------
+// ================= three.js =================
 const renderer=new THREE.WebGLRenderer({canvas:$("gl"),antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(55,1,.1,50);
 cam.position.set(0,1,4);cam.lookAt(0,1,0);
-scene.add(new THREE.HemisphereLight(0xffffff,0x334455,1.1));
-const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(3,5,4);scene.add(dl);
+scene.add(new THREE.HemisphereLight(0xffffff,0x556677,1.2));
+const dl=new THREE.DirectionalLight(0xffffff,.9);dl.position.set(3,5,4);scene.add(dl);
 const ring=new THREE.Mesh(new THREE.RingGeometry(.9,1.1,32),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.6,side:2}));
 ring.rotation.x=-Math.PI/2;ring.position.y=.02;scene.add(ring);
 function resize(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();}
 addEventListener("resize",resize);
-const M=c=>new THREE.MeshStandardMaterial({color:c,roughness:.5});
-const eye=(x,y,z)=>{const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.SphereGeometry(.13,12,12),M(0xffffff)));
- const p=new THREE.Mesh(new THREE.SphereGeometry(.06,12,12),M(0x111111));p.position.z=.09;g.add(p);g.position.set(x,y,z);return g;};
-function build(t){const g=new THREE.Group(),c=new THREE.Color(t.color);
- if(t.id==="blobi"){const b=new THREE.Mesh(new THREE.SphereGeometry(.8,24,24),M(c));b.scale.y=.85;b.position.y=.8;g.add(b,eye(-.28,1,.7),eye(.28,1,.7));
-  const a=new THREE.Mesh(new THREE.SphereGeometry(.12,12,12),M(c));a.position.y=1.85;g.add(a);
-  g.userData.anim=s=>{g.scale.set(1+Math.sin(s*4)*.06,1-Math.sin(s*4)*.06,1);g.position.y=Math.abs(Math.sin(s*2))*.25;};}
- else if(t.id==="kubik"){const b=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.2,1.2),M(c));b.position.y=.7;g.add(b,eye(-.3,.9,.6),eye(.3,.9,.6));
-  [-.4,.4].forEach(x=>{const e=new THREE.Mesh(new THREE.ConeGeometry(.2,.5,4),M(c));e.position.set(x,1.55,0);g.add(e);});
-  g.userData.anim=s=>{g.rotation.y=Math.sin(s*1.5)*.5;g.position.y=Math.abs(Math.sin(s*3))*.12;};}
- else{const b=new THREE.Mesh(new THREE.ConeGeometry(.7,1.6,6),M(c));b.position.y=.9;g.add(b,eye(-.22,.8,.4),eye(.22,.8,.4));
-  const f=new THREE.Mesh(new THREE.OctahedronGeometry(.3),new THREE.MeshStandardMaterial({color:0xffc107,emissive:0xff6f00}));f.position.y=2;g.add(f);
-  g.userData.anim=s=>{f.rotation.y=s*3;f.position.y=2+Math.sin(s*4)*.12;g.rotation.y=s*.8;};}
- return g;}
-function setMesh(t){if(mesh){scene.remove(mesh);mesh=null;}if(t){mesh=build(t);scene.add(mesh);}}
-// bola
-const ball=new THREE.Group();
-ball.add(new THREE.Mesh(new THREE.SphereGeometry(.22,24,12,0,6.283,0,Math.PI/2),M(0xe53935)),
- new THREE.Mesh(new THREE.SphereGeometry(.22,24,12,0,6.283,Math.PI/2,Math.PI/2),M(0xffffff)));
-const band=new THREE.Mesh(new THREE.TorusGeometry(.22,.025,8,24),M(0x111111));band.rotation.x=Math.PI/2;ball.add(band);
-const btn=new THREE.Mesh(new THREE.SphereGeometry(.06,12,12),M(0xffffff));btn.position.z=.22;ball.add(btn);scene.add(ball);
-function resetBall(){ball.position.set(0,.4,2.5);ball.rotation.set(.3,0,0);ball.scale.setScalar(1);ball.visible=true;state="idle";}
 
-// ---------- pertemuan & lempar bola (raycast) ----------
+// --- helper model: toon + outline tebal (bentuk jelas) ---
+const INK=0x1b1b2f,OL=new THREE.MeshBasicMaterial({color:INK,side:THREE.BackSide});
+const S3=(r,w=16)=>new THREE.SphereGeometry(r,w,w),lite=(c,a)=>new THREE.Color(c).lerp(new THREE.Color(0xffffff),a);
+function P(geo,col,x=0,y=0,z=0,sx=1,sy=1,sz=1,ol=true){
+ const m=new THREE.Mesh(geo,new THREE.MeshToonMaterial({color:col}));m.position.set(x,y,z);m.scale.set(sx,sy,sz);
+ if(ol){const o=new THREE.Mesh(geo,OL);o.scale.setScalar(1.09);m.add(o);}return m;}
+function eye(x,y,z,s=1){const g=new THREE.Group();
+ g.add(P(S3(.17*s),0xffffff,0,0,0,1,1.15,.6,false),P(S3(.1*s),INK,0,-.01*s,.07*s,1,1.1,.6,false),P(S3(.035*s,8),0xffffff,.04*s,.04*s,.14*s,1,1,1,false));
+ g.position.set(x,y,z);return g;}
+function smile(x,y,z,s=1){const m=new THREE.Mesh(new THREE.TorusGeometry(.1*s,.022*s,8,16,Math.PI),new THREE.MeshBasicMaterial({color:INK}));
+ m.rotation.z=Math.PI;m.position.set(x,y,z);return m;}
+const cheek=(x,y,z)=>P(S3(.08,10),0xff8a80,x,y,z,1,.7,.35,false);
+const blink=(t,e)=>{const k=(t%3.4)<.12?.1:1;e.forEach(x=>x.scale.y=k);};
+
+// --- Blobi: slime tetesan air ---
+function bBlobi(c){const g=new THREE.Group(),eyes=[];
+ g.add(P(S3(.85,24),c,0,.85,0,1,.92,.95),P(new THREE.ConeGeometry(.34,.7,16),c,0,1.72,0),P(S3(.58),lite(c,.65),0,.7,.52,1,.95,.5,false),
+  smile(0,.74,.87),P(S3(.09,10),0xffffff,-.42,1.42,.52,1,1.4,.5,false));
+ [-1,1].forEach(s=>{const e=eye(s*.3,1.02,.7,1.1);eyes.push(e);g.add(e,P(S3(.2),c,s*.9,.65,.15),cheek(s*.5,.8,.72),P(S3(.22),c,s*.38,.1,.35,1.1,.6,1.3));});
+ g.userData.anim=t=>{const k=Math.sin(t*4);g.scale.set(1+k*.05,1-k*.05,1+k*.05);g.position.y=Math.abs(Math.sin(t*2))*.2;blink(t,eyes);};return g;}
+
+// --- Kubik: makhluk kotak berkuping + ekor + antena ---
+function bKubik(c){const g=new THREE.Group(),eyes=[],B=(w,h,d)=>new THREE.BoxGeometry(w,h,d),dk=new THREE.Color(c).multiplyScalar(.75);
+ g.add(P(B(1.3,1.15,1.1),c,0,.95,0),P(B(.9,.4,.1),lite(c,.65),0,.65,.56,1,1,1,false),smile(0,.93,.61),
+  P(new THREE.CylinderGeometry(.03,.03,.4,6),INK,0,1.72,0,1,1,1,false),P(S3(.11),0xffd740,0,1.98,0));
+ [-1,1].forEach(s=>{const e=eye(s*.32,1.15,.57);eyes.push(e);
+  g.add(e,P(new THREE.ConeGeometry(.25,.55,4),c,s*.4,1.8,0),P(new THREE.ConeGeometry(.12,.3,4),0xffab91,s*.4,1.76,.1,1,1,1,false),
+  cheek(s*.5,.88,.57),P(B(.22,.5,.25),c,s*.75,.75,.1),P(B(.45,.25,.55),dk,s*.36,.2,.15));});
+ const tail=new THREE.Group();tail.position.set(.55,.55,-.5);tail.add(P(new THREE.CylinderGeometry(.09,.12,.8,10),c,0,.4,0),P(S3(.14),0xffd740,0,.85,0));g.add(tail);
+ g.userData.anim=t=>{g.position.y=Math.abs(Math.sin(t*3))*.14;g.rotation.y=Math.sin(t*1.5)*.35;tail.rotation.z=Math.sin(t*6)*.4-.4;blink(t,eyes);};return g;}
+
+// --- Pyra: naga api kecil (langka) ---
+function bPyra(c){const g=new THREE.Group(),eyes=[],dark=new THREE.Color(c).multiplyScalar(.7),cream=0xffe0b2,wings=[];
+ g.add(P(S3(.68,24),c,0,.8,0,1,1.1,.95),P(S3(.5),cream,0,.72,.45,.85,1.1,.55,false),P(S3(.62,24),c,0,1.78,.1),
+  P(S3(.3),cream,0,1.62,.62,1,.75,.9),smile(0,1.55,.9,.8),
+  P(S3(.04,6),INK,-.1,1.68,.87,1,1,1,false),P(S3(.04,6),INK,.1,1.68,.87,1,1,1,false));
+ [-1,1].forEach(s=>{const e=eye(s*.3,1.9,.58,1.1);eyes.push(e);
+  const h=P(new THREE.ConeGeometry(.12,.5,8),cream,s*.3,2.4,0);h.rotation.z=-s*.35;
+  const w=P(new THREE.ConeGeometry(.4,1,3),dark,s*.8,1.25,-.35,1,1,.18);w.rotation.z=-s;w.userData.s=s;wings.push(w);
+  g.add(e,h,w,cheek(s*.48,1.7,.6),P(S3(.16),c,s*.68,.75,.28),P(S3(.22),c,s*.35,.12,.3,1.1,.6,1.3));});
+ const tail=P(new THREE.ConeGeometry(.22,.95,12),c,0,.45,-.85);tail.rotation.x=-1.27;g.add(tail);
+ const fl=new THREE.Group();fl.position.set(0,.72,-1.42);
+ fl.add(new THREE.Mesh(new THREE.ConeGeometry(.2,.55,8),new THREE.MeshBasicMaterial({color:0xff9100})),
+  new THREE.Mesh(new THREE.ConeGeometry(.11,.34,8),new THREE.MeshBasicMaterial({color:0xffee58})));
+ const pl=new THREE.PointLight(0xff7043,1.2,4);fl.add(pl);g.add(fl);
+ g.userData.anim=t=>{g.position.y=.12+Math.sin(t*2.5)*.12;wings.forEach(w=>w.rotation.z=-w.userData.s*(1+Math.sin(t*5)*.25));
+  fl.scale.set(1,1+Math.sin(t*14)*.2,1);blink(t,eyes);};return g;}
+
+const BUILD={blobi:bBlobi,kubik:bKubik,pyra:bPyra};
+function setMesh(t){if(mesh){scene.remove(mesh);mesh=null;}if(t){mesh=(BUILD[t.id]||bBlobi)(new THREE.Color(t.color));scene.add(mesh);}}
+
+// --- Orb Kristal (bola tangkap orisinal) ---
+const ball=new THREE.Group();
+const shell=new THREE.Mesh(new THREE.IcosahedronGeometry(.25,1),new THREE.MeshStandardMaterial({color:0x7c4dff,flatShading:true,transparent:true,opacity:.9,roughness:.2,metalness:.4}));
+const core=new THREE.Mesh(S3(.12),new THREE.MeshBasicMaterial({color:0xffd740}));
+const rg=new THREE.Mesh(new THREE.TorusGeometry(.34,.022,8,32),new THREE.MeshBasicMaterial({color:0xffd740}));rg.rotation.x=1.2;
+ball.add(shell,core,rg);scene.add(ball);
+function resetBall(){ball.position.set(0,.4,2.5);ball.rotation.set(0,0,0);ball.scale.setScalar(1);state="idle";}
+
+// ================= pertemuan & lempar (raycast) =================
 const ray=new THREE.Raycaster(),ndc=new THREE.Vector2(),plane=new THREE.Plane(new THREE.Vector3(0,0,1),-2.5),v3=new THREE.Vector3();
 const aim=e=>{ndc.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);ray.setFromCamera(ndc,cam);};
 const gl=$("gl");
@@ -91,52 +131,61 @@ gl.onpointermove=e=>{if(state!=="drag")return;aim(e);
 gl.onpointerup=e=>{if(state!=="drag")return;if(y0-e.clientY<60){resetBall();return;}throwBall();};
 function throwBall(){state="fly";const s=ball.position.clone(),hit=Math.abs(s.x)<.9;
  const e=hit?new THREE.Vector3(0,1,.2):new THREE.Vector3(s.x*3,1.8,-3),t0=performance.now();beep(300,.15,"triangle");buzz(30);
- (function f(){const k=Math.min((performance.now()-t0)/650,1);ball.position.lerpVectors(s,e,k);ball.position.y+=Math.sin(Math.PI*k)*.8;
-  ball.rotation.x+=.4;ball.scale.setScalar(1-.4*k);
+ (function f(){const k=Math.min((performance.now()-t0)/650,1);ball.position.lerpVectors(s,e,k);ball.position.y+=Math.sin(Math.PI*k)*.8;ball.scale.setScalar(1-.4*k);
   if(k<1)return requestAnimationFrame(f);
   if(hit)capture();else{buzz(50);toast("Meleset! Coba lagi");resetBall();}})();}
 function capture(){state="shake";const m=mesh,t0=performance.now();
  (function f(){const k=Math.min((performance.now()-t0)/400,1);m.scale.setScalar(1-k);
   if(k<1)return requestAnimationFrame(f);
-  m.visible=false;ball.position.set(0,.3,.2);ball.rotation.set(.3,0,0);const t1=performance.now();
+  m.visible=false;ball.position.set(0,.3,.2);const t1=performance.now();
   (function sh(){const q=(performance.now()-t1)/1800;
    if(q<1){ball.rotation.z=Math.sin(q*Math.PI*6)*.5;return requestAnimationFrame(sh);}
    ball.rotation.z=0;Math.random()<cur.t.rate?win():lose();})();})();}
-function win(){const t=cur.t;save.inv.push({type:t.id,spawn:cur.sp.id,time:Date.now()});save.cd[cur.sp.id]=Date.now();save.score+=t.points;persist();
+function consume(sp){if(sp.wild)wild=wild.filter(w=>w!==sp);else save.cd[sp.id]=Date.now();persist();}
+function win(){const t=cur.t;save.inv.push({type:t.id,spawn:cur.sp.id,time:Date.now()});save.score+=t.points;consume(cur.sp);
  $("sc").textContent=save.score;buzz([80,40,120,40,200]);beep(520,.12);setTimeout(()=>beep(780,.12),130);setTimeout(()=>beep(1040,.25),260);
  toast(`🎉 ${t.name} tertangkap! +${t.points}`);setTimeout(closeEnc,1200);}
 function lose(){mesh.scale.setScalar(1);mesh.visible=true;resetBall();buzz(200);beep(200,.3,"sawtooth");
- if(++cur.fails>=S.maxFails){save.cd[cur.sp.id]=Date.now();persist();toast(`${cur.t.name} kabur!`);setTimeout(closeEnc,1000);state="off";}
+ if(++cur.fails>=S.maxFails){consume(cur.sp);toast(`${cur.t.name} kabur!`);state="off";setTimeout(closeEnc,1000);}
  else toast(`Lepas! Coba lagi (${cur.fails}/${S.maxFails})`);}
 async function encounter(sp){const t=typeOf(sp.type);cur={sp,t,fails:0};$("enc").style.display="block";resize();setMesh(t);resetBall();
- $("etxt").textContent=`${t.name} liar muncul! Tarik bola ke atas untuk melempar`;
+ $("etxt").textContent=`${t.name} liar muncul! Tarik Orb ke atas lalu lepas`;
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});$("cam").srcObject=stream;}catch(e){}}
 function closeEnc(){state="off";$("enc").style.display="none";if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;setMesh(null);cur=null;update();}
 $("flee").onclick=closeEnc;
 
-// ---------- peta & lokasi ----------
+// ================= spawn saat berjalan =================
+function pickType(){let r=Math.random()*D.types.reduce((a,t)=>a+t.weight,0);for(const t of D.types)if((r-=t.weight)<0)return t;return D.types[0];}
+function spawnWild(p){const t=pickType(),d=S.spawnMin+Math.random()*(S.spawnMax-S.spawnMin),a=Math.random()*6.283;
+ wild.push({id:"w"+(++wid),wild:1,type:t.id,lat:p.lat+d*Math.cos(a)/110540,lng:p.lng+d*Math.sin(a)/(111320*Math.cos(p.lat*Math.PI/180)),exp:Date.now()+S.ttlSec*1000});
+ if(t.rarity==="langka"){buzz([100,60,100,60,200]);toast("✨ Makhluk LANGKA muncul di dekatmu!");}else{buzz(80);toast(`${t.name} liar muncul di dekatmu!`);}}
+function maybeSpawn(force){const p=pos();if(!p)return;wild=wild.filter(w=>w.exp>Date.now());if(wild.length>=S.maxWild)return;
+ if(force||!lastSp||dist(p,lastSp)>=S.moveStep){lastSp={lat:p.lat,lng:p.lng};spawnWild(p);}}
+
+// ================= peta =================
 const mk={};
-function tapCr(sp){const d=dist(pos()||{lat:0,lng:0},sp),t=typeOf(sp.type);
- if(!pos())return toast("Menunggu GPS…");
+function tapCr(sp){const p=pos();if(!p)return toast("Menunggu GPS…");const d=dist(p,sp),t=typeOf(sp.type);
  if(d>S.catchRadius){buzz(60);beep(180,.2,"square");return toast(`${t.name} berjarak ${Math.round(d)} m — dekati ≤${S.catchRadius} m`);}
  encounter(sp);}
-function update(){const p=pos();if(!p)return;pm.setLatLng(p);pc.setLatLng(p);let best=1e9,bs=null;
- D.spawns.forEach(sp=>{const d=dist(p,sp);
-  if(onCd(sp)){if(mk[sp.id]){map.removeLayer(mk[sp.id]);delete mk[sp.id];}return;}
-  if(d<best){best=d;bs=sp;}
-  if(!mk[sp.id]){const t=typeOf(sp.type);mk[sp.id]=L.marker([sp.lat,sp.lng],{icon:L.divIcon({className:"",iconSize:[44,44],
-   html:`<div class="cr ${t.rarity==="langka"?"rare":""}" style="background:${t.color}">${t.name[0]}</div>`})}).addTo(map).on("click",()=>tapCr(sp));}
-  mk[sp.id].setOpacity(d<=S.spawnRadius?1:.4);});
- $("st").textContent=bs?`Terdekat: ${typeOf(bs.type).name} • ${Math.round(best)} m `+(best<=S.catchRadius?"✅ ketuk untuk menangkap!":"(dekati)"):"Semua makhluk sedang cooldown";}
+function update(){const p=pos();if(!p)return;pm.setLatLng(p);pc.setLatLng(p);if(follow)map.panTo(p,{animate:true,duration:.3});
+ const n=Date.now(),list=D.spawns.filter(s=>!onCd(s)).concat(wild.filter(w=>w.exp>n)),ids=new Set(list.map(s=>s.id));
+ Object.keys(mk).forEach(id=>{if(!ids.has(id)){map.removeLayer(mk[id]);delete mk[id];}});
+ let best=1e9,bs=null;
+ list.forEach(sp=>{const d=dist(p,sp);if(d<best){best=d;bs=sp;}
+  if(!mk[sp.id]){const t=typeOf(sp.type);mk[sp.id]=L.marker([sp.lat,sp.lng],{icon:L.divIcon({className:"",iconSize:[46,46],
+   html:`<div class="cr ${t.rarity==="langka"?"rare":""}" style="background:${t.color}"><b></b><b></b><i></i></div>`})}).addTo(map).on("click",()=>tapCr(sp));}
+  mk[sp.id].setOpacity(d<=S.spawnRadius?1:.45);});
+ $("st").textContent=bs?`Terdekat: ${typeOf(bs.type).name} • ${Math.round(best)} m `+(best<=S.catchRadius?"✅ ketuk untuk menangkap!":"(dekati)"):"Berjalanlah… makhluk akan muncul";}
 
-// ---------- UI ----------
+// ================= UI =================
 function showInv(){const n={};save.inv.forEach(i=>n[i.type]=(n[i.type]||0)+1);
  $("invList").innerHTML=`<div class="row"><b>Total</b><b>${save.inv.length}</b></div>`+D.types.map(t=>`<div class="row"><span style="color:${t.color}">● ${t.name} (${t.rarity})</span><span>×${n[t.id]||0}</span></div>`).join("");
  $("inv").style.display="block";}
 $("bInv").onclick=showInv;$("bClose").onclick=()=>$("inv").style.display="none";
 $("bReset").onclick=()=>{if(confirm("Hapus semua data?")){save.inv=[];save.cd={};save.score=0;persist();$("sc").textContent=0;showInv();update();}};
-$("bSim").onclick=()=>{sim=!sim;if(sim&&!simPos){const s=D.spawns[0];simPos={lat:s.lat+.0004,lng:s.lng};}
- $("bSim").textContent="📍 Simulasi: "+(sim?"ON":"OFF");if(sim){toast("Ketuk peta untuk berpindah");map.panTo(simPos);}update();};
+$("bCen").onclick=()=>{follow=true;if(pos())map.panTo(pos());};
+$("bSim").onclick=()=>{sim=!sim;if(sim&&!simPos){const s=me||D.spawns[0];simPos={lat:s.lat+.0004,lng:s.lng};}
+ $("bSim").textContent="🚶 Simulasi: "+(sim?"ON":"OFF");if(sim)toast("Ketuk peta: karakter berjalan ke sana");maybeSpawn(false);update();};
 
 $("bStart").onclick=async()=>{
  actx=new (window.AudioContext||window.webkitAudioContext)();
@@ -145,11 +194,18 @@ $("bStart").onclick=async()=>{
  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
  pm=L.circleMarker([f.lat,f.lng],{radius:9,color:"#fff",weight:3,fillColor:"#1e88e5",fillOpacity:1}).addTo(map);
  pc=L.circle([f.lat,f.lng],{radius:S.catchRadius,color:"#2e7d32",weight:1,fillOpacity:.12}).addTo(map);
- map.on("click",e=>{if(sim){simPos={lat:e.latlng.lat,lng:e.latlng.lng};update();}});
+ map.on("dragstart",()=>follow=false);
+ map.on("click",e=>{if(sim)simT={lat:e.latlng.lat,lng:e.latlng.lng};});
  let first=true;
- navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude};if(first){map.setView(me,18);first=false;}update();},
+ navigator.geolocation.watchPosition(p=>{me={lat:p.coords.latitude,lng:p.coords.longitude};if(first){map.setView(me,18);first=false;}maybeSpawn(false);update();},
   er=>toast("GPS gagal: "+er.message+" — pakai Simulasi"),{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+ setInterval(()=>{if(!sim||!simT||!simPos)return;const d=dist(simPos,simT);
+  if(d<1.5){simPos=simT;simT=null;}else{const k=1.2/d;simPos={lat:simPos.lat+(simT.lat-simPos.lat)*k,lng:simPos.lng+(simT.lng-simPos.lng)*k};}
+  maybeSpawn(false);update();},200);
+ setInterval(()=>{maybeSpawn(true);update();},S.spawnEverySec*1000);
  setInterval(update,2000);
- (function loop(t){requestAnimationFrame(loop);if(state==="off")return;if(mesh&&mesh.visible&&mesh.userData.anim&&state!=="shake")mesh.userData.anim(t/1000);renderer.render(scene,cam);})(0);
+ (function loop(t){requestAnimationFrame(loop);if(state==="off")return;
+  shell.rotation.y+=.03;rg.rotation.z+=.05;
+  if(mesh&&mesh.visible&&mesh.userData.anim&&state!=="shake")mesh.userData.anim(t/1000);renderer.render(scene,cam);})(0);
 };
 </script></body></html>
