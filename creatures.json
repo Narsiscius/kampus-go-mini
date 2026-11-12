@@ -1,0 +1,14 @@
+{
+  "settings": { "spawnRadius": 80, "catchRadius": 30, "cooldownSec": 300, "maxFails": 3 },
+  "types": [
+    { "id": "blobi", "name": "Blobi", "rarity": "umum",   "color": "#26c6da", "points": 10, "rate": 0.75 },
+    { "id": "kubik", "name": "Kubik", "rarity": "umum",   "color": "#ffa726", "points": 15, "rate": 0.65 },
+    { "id": "pyra",  "name": "Pyra",  "rarity": "langka", "color": "#ef5350", "points": 50, "rate": 0.35 }
+  ],
+  "spawns": [
+    { "id": "s1", "type": "blobi", "lat": 3.59520, "lng": 98.67220 },
+    { "id": "s2", "type": "kubik", "lat": 3.59545, "lng": 98.67250 },
+    { "id": "s3", "type": "blobi", "lat": 3.59495, "lng": 98.67260 },
+    { "id": "s4", "type": "pyra",  "lat": 3.59560, "lng": 98.67200 }
+  ]
+}
